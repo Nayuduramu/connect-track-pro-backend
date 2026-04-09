@@ -1,4 +1,3 @@
-// src\main\java\com\connecttrack\pro\config\SecurityConfig.java
 package com.connecttrack.pro.config;
 
 import com.connecttrack.pro.security.JwtRequestFilter;
@@ -79,7 +78,14 @@ public class SecurityConfig {
                 // --------------------------------------------------
                 // PUBLIC ENDPOINTS
                 // --------------------------------------------------
-                .requestMatchers("/api/v1/auth/**", "/ws/**").permitAll()
+                .requestMatchers(
+                        "/",
+                        "/swagger-ui/**",
+                        "/swagger-ui.html",
+                        "/v3/api-docs/**",
+                        "/api/v1/auth/**",
+                        "/ws/**"
+                ).permitAll()
 
                 // Allow static image access from `/public/images/**`
                 .requestMatchers(HttpMethod.GET, "/public/images/**").permitAll()

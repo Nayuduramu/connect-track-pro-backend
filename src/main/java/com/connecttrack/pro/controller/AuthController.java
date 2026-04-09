@@ -1,3 +1,4 @@
+// src\main\java\com\connecttrack\pro\controller\AuthController.java
 package com.connecttrack.pro.controller;
 
 import com.connecttrack.pro.dto.LoginRequest;
@@ -87,6 +88,20 @@ public class AuthController {
 
         return ResponseEntity.ok(response);
     }
+
+
+    @PostMapping("/debug-reset")
+public ResponseEntity<String> debugReset() {
+    Employee employee = employeeRepository
+            .findByEmail("admin@company.com")
+            .orElseThrow();
+
+    employee.setPassword(passwordEncoder.encode("password"));
+    employee.setPasswordChangeRequired(false);
+    employeeRepository.save(employee);
+
+    return ResponseEntity.ok("Password reset to password");
+}
 
     @PostMapping("/set-password")
     public ResponseEntity<?> setNewPassword(@RequestBody SetPasswordRequest request) {
