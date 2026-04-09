@@ -80,6 +80,7 @@ public class SecurityConfig {
                 // --------------------------------------------------
                 .requestMatchers(
                         "/",
+                        "/health",
                         "/swagger-ui/**",
                         "/swagger-ui.html",
                         "/v3/api-docs/**",
@@ -87,7 +88,7 @@ public class SecurityConfig {
                         "/ws/**"
                 ).permitAll()
 
-                // Allow static image access from `/public/images/**`
+                // Public static images
                 .requestMatchers(HttpMethod.GET, "/public/images/**").permitAll()
 
                 // Existing public uploads
