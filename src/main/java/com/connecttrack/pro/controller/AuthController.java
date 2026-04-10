@@ -62,15 +62,20 @@ public class AuthController {
                 .orElseThrow(() -> new RuntimeException("Authenticated user not found"));
 
         // Device ID validation
+        
         String registeredDeviceId = employee.getDeviceId();
-        if (registeredDeviceId != null && !registeredDeviceId.isEmpty()) {
-            if (!registeredDeviceId.equals(loginRequest.getDeviceId())) {
-                LoginResponse response = new LoginResponse();
-                response.setDeviceMismatch(true);
-                response.setFullName(employee.getFullName());
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
-            }
-        }
+String requestDeviceId = loginRequest.getDeviceId();
+
+if (registeredDeviceId != null && !registeredDeviceId.trim().isEmpty()) {
+    if (requestDeviceId == null || 
+        !registeredDeviceId.trim().equals(requestDeviceId.trim())) {
+
+        LoginResponse response = new LoginResponse();
+        response.setDeviceMismatch(true);
+        response.setFullName(employee.getFullName());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
+    }
+}
 
         // Password change required
         if (employee.isPasswordChangeRequired()) {
