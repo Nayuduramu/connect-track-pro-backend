@@ -1,4 +1,3 @@
-// src\main\java\com\connecttrack\pro\controller\AuthController.java
 package com.connecttrack.pro.controller;
 
 import com.connecttrack.pro.dto.LoginRequest;
@@ -27,27 +26,42 @@ import java.util.Map;
 @RequestMapping("/api/v1/auth")
 public class AuthController {
 
-    @Autowired private AuthenticationManager authenticationManager;
-    @Autowired private EmployeeRepository employeeRepository;
-    @Autowired private JwtUtil jwtUtil;
-    @Autowired private PasswordEncoder passwordEncoder;
-    @Autowired private EmailService emailService;
+    @Autowired
+    private AuthenticationManager authenticationManager;
+
+    @Autowired
+    private EmployeeRepository employeeRepository;
+
+    @Autowired
+    private JwtUtil jwtUtil;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
+    @Autowired
+    private EmailService emailService;
 
     @PostMapping("/login")
     public ResponseEntity<?> createAuthenticationToken(@RequestBody LoginRequest loginRequest) {
         Authentication authentication;
+
         try {
             authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(loginRequest.getEmail(), loginRequest.getPassword())
+                    new UsernamePasswordAuthenticationToken(
+                            loginRequest.getEmail(),
+                            loginRequest.getPassword()
+                    )
             );
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid credentials");
         }
 
         UserDetails userDetails = (UserDetails) authentication.getPrincipal();
+
         Employee employee = employeeRepository.findByEmail(userDetails.getUsername())
                 .orElseThrow(() -> new RuntimeException("Authenticated user not found"));
 
+        // Device ID validation
         String registeredDeviceId = employee.getDeviceId();
         if (registeredDeviceId != null && !registeredDeviceId.isEmpty()) {
             if (!registeredDeviceId.equals(loginRequest.getDeviceId())) {
@@ -58,18 +72,22 @@ public class AuthController {
             }
         }
 
+        // Password change required
         if (employee.isPasswordChangeRequired()) {
             String tempToken = jwtUtil.generatePasswordChangeToken(userDetails);
+
             Map<String, Object> response = new HashMap<>();
             response.put("passwordChangeRequired", true);
             response.put("token", tempToken);
             response.put("id", employee.getId());
             response.put("fullName", employee.getFullName());
             response.put("email", employee.getEmail());
-            response.put("role", employee.getRole().getName()); // <-- CORRECTED
+            response.put("role", employee.getRole().getName());
+
             return ResponseEntity.ok(response);
         }
 
+        // Generate normal JWT
         final String jwt = jwtUtil.generateToken(userDetails, employee);
 
         LoginResponse response = new LoginResponse();
@@ -77,7 +95,7 @@ public class AuthController {
         response.setId(employee.getId());
         response.setFullName(employee.getFullName());
         response.setEmail(employee.getEmail());
-        response.setRole(employee.getRole().getName()); // <-- CORRECTED
+        response.setRole(employee.getRole().getName());
         response.setPasswordChangeRequired(false);
         response.setProfilePictureUrl(employee.getProfilePictureUrl());
         response.setJoinDate(employee.getJoinDate());
@@ -89,19 +107,23 @@ public class AuthController {
         return ResponseEntity.ok(response);
     }
 
-
+    // ===========================
+    // DEBUG RESET FOR ADMIN TEST
+    // ===========================
     @PostMapping("/debug-reset")
-public ResponseEntity<String> debugReset() {
-    Employee employee = employeeRepository
-            .findByEmail("admin@company.com")
-            .orElseThrow();
+    public ResponseEntity<String> debugReset() {
+        Employee employee = employeeRepository
+                .findByEmail("admin@company.com")
+                .orElseThrow(() -> new RuntimeException("Admin user not found"));
 
-    employee.setPassword(passwordEncoder.encode("password"));
-    employee.setPasswordChangeRequired(false);
-    employeeRepository.save(employee);
+        employee.setPassword(passwordEncoder.encode("password"));
+        employee.setPasswordChangeRequired(false);
+        employee.setDeviceId("admin-device-001");
 
-    return ResponseEntity.ok("Password reset to password");
-}
+        employeeRepository.save(employee);
+
+        return ResponseEntity.ok("Admin password reset successfully");
+    }
 
     @PostMapping("/set-password")
     public ResponseEntity<?> setNewPassword(@RequestBody SetPasswordRequest request) {
@@ -113,9 +135,10 @@ public ResponseEntity<String> debugReset() {
 
         employee.setPassword(passwordEncoder.encode(request.getNewPassword()));
         employee.setPasswordChangeRequired(false);
+
         employeeRepository.save(employee);
 
-        final UserDetails userDetails = (UserDetails) authentication.getPrincipal();
+        UserDetails userDetails = (UserDetails) authentication.getPrincipal();
         final String jwt = jwtUtil.generateToken(userDetails, employee);
 
         LoginResponse response = new LoginResponse();
@@ -123,7 +146,7 @@ public ResponseEntity<String> debugReset() {
         response.setId(employee.getId());
         response.setFullName(employee.getFullName());
         response.setEmail(employee.getEmail());
-        response.setRole(employee.getRole().getName()); // <-- CORRECTED
+        response.setRole(employee.getRole().getName());
         response.setPasswordChangeRequired(false);
         response.setProfilePictureUrl(employee.getProfilePictureUrl());
         response.setJoinDate(employee.getJoinDate());
@@ -138,16 +161,22 @@ public ResponseEntity<String> debugReset() {
     @PostMapping("/forgot-password")
     public ResponseEntity<?> forgotPassword(@RequestBody Map<String, String> payload) {
         String email = payload.get("email");
+
         Employee employee = employeeRepository.findByEmail(email).orElse(null);
 
         if (employee != null) {
             String tempPassword = RandomStringUtils.randomAlphanumeric(8);
+
             employee.setPassword(passwordEncoder.encode(tempPassword));
             employee.setPasswordChangeRequired(true);
+
             employeeRepository.save(employee);
+
             emailService.sendPasswordResetEmail(employee.getEmail(), tempPassword);
         }
 
-        return ResponseEntity.ok("If an account with that email exists, a password reset email has been sent.");
+        return ResponseEntity.ok(
+                "If an account with that email exists, a password reset email has been sent."
+        );
     }
 }
