@@ -63,19 +63,12 @@ public class AuthController {
 
         // Device ID validation
         
-        String registeredDeviceId = employee.getDeviceId();
+        // TEMPORARILY DISABLED DEVICE CHECK FOR DEBUGGING
+String registeredDeviceId = employee.getDeviceId();
 String requestDeviceId = loginRequest.getDeviceId();
 
-if (registeredDeviceId != null && !registeredDeviceId.trim().isEmpty()) {
-    if (requestDeviceId == null || 
-        !registeredDeviceId.trim().equals(requestDeviceId.trim())) {
-
-        LoginResponse response = new LoginResponse();
-        response.setDeviceMismatch(true);
-        response.setFullName(employee.getFullName());
-        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
-    }
-}
+System.out.println("DB Device ID = " + registeredDeviceId);
+System.out.println("Request Device ID = " + requestDeviceId);
 
         // Password change required
         if (employee.isPasswordChangeRequired()) {
