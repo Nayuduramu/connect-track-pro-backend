@@ -24,27 +24,27 @@ public class JwtRequestFilter extends OncePerRequestFilter {
     @Autowired
     private JwtUtil jwtUtil;
 
+    // ✅ THIS METHOD COMPLETELY SKIPS LOGIN ROUTES
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String path = request.getServletPath();
+
+        return path.startsWith("/api/v1/auth/")
+                || path.startsWith("/swagger-ui")
+                || path.startsWith("/v3/api-docs")
+                || path.startsWith("/health")
+                || path.startsWith("/public/images")
+                || path.startsWith("/user-uploads")
+                || path.startsWith("/api/v1/user-uploads")
+                || path.startsWith("/ws");
+    }
+
     @Override
     protected void doFilterInternal(
             HttpServletRequest request,
             HttpServletResponse response,
             FilterChain chain
     ) throws ServletException, IOException {
-
-        String path = request.getServletPath();
-
-        // ✅ VERY IMPORTANT: skip public routes
-        if (path.startsWith("/api/v1/auth/")
-                || path.startsWith("/swagger-ui")
-                || path.startsWith("/v3/api-docs")
-                || path.startsWith("/health")
-                || path.startsWith("/public/images")
-                || path.startsWith("/user-uploads")
-                || path.startsWith("/api/v1/user-uploads")) {
-
-            chain.doFilter(request, response);
-            return;
-        }
 
         final String authorizationHeader = request.getHeader("Authorization");
 
@@ -69,7 +69,6 @@ public class JwtRequestFilter extends OncePerRequestFilter {
             UserDetails userDetails =
                     this.userDetailsService.loadUserByUsername(username);
 
-            // ✅ use existing validateToken(UserDetails)
             if (jwtUtil.validateToken(jwt, userDetails)) {
 
                 UsernamePasswordAuthenticationToken token =
