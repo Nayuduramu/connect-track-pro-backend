@@ -1,6 +1,8 @@
+// src/main/java/com/connecttrack/pro/config/SecurityConfig.java
 package com.connecttrack.pro.config;
 
 import com.connecttrack.pro.security.JwtRequestFilter;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -54,7 +56,7 @@ public class SecurityConfig {
     }
 
     // ---------------------------------------------------------
-    // EXCLUDE STATIC USER FILES
+    // STATIC FILES
     // ---------------------------------------------------------
     @Bean
     public WebSecurityCustomizer webSecurityCustomizer() {
@@ -70,80 +72,87 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-            .cors(Customizer.withDefaults())
-            .csrf(csrf -> csrf.disable())
+                .cors(Customizer.withDefaults())
+                .csrf(csrf -> csrf.disable())
 
-            .authorizeHttpRequests(auth -> auth
+                .authorizeHttpRequests(auth -> auth
 
-                // --------------------------------------------------
-                // PUBLIC ENDPOINTS
-                // --------------------------------------------------
-                .requestMatchers(
-                        "/",
-                        "/health",
-                        "/swagger-ui/**",
-                        "/swagger-ui.html",
-                        "/v3/api-docs/**",
-                        "/api/v1/auth/**",
-                        "/ws/**"
-                ).permitAll()
+                        // --------------------------------------------------
+                        // PUBLIC ENDPOINTS
+                        // --------------------------------------------------
+                        .requestMatchers(
+                                "/",
+                                "/health",
+                                "/swagger-ui/**",
+                                "/swagger-ui.html",
+                                "/v3/api-docs/**",
+                                "/api/v1/auth/**",
+                                "/ws/**"
+                        ).permitAll()
 
-                // Public static images
-                .requestMatchers(HttpMethod.GET, "/public/images/**").permitAll()
+                        // Public images
+                        .requestMatchers(HttpMethod.GET, "/public/images/**").permitAll()
 
-                // Existing public uploads
-                .requestMatchers("/user-uploads/**").permitAll()
-                .requestMatchers("/api/v1/user-uploads/**").permitAll()
+                        // uploads
+                        .requestMatchers("/user-uploads/**").permitAll()
+                        .requestMatchers("/api/v1/user-uploads/**").permitAll()
 
-                // --------------------------------------------------
-                // AUTHENTICATED READ ACCESS
-                // --------------------------------------------------
-                .requestMatchers(HttpMethod.GET, "/api/v1/admin/wifi-routers").authenticated()
-                .requestMatchers(HttpMethod.GET, "/api/v1/admin/settings/location").authenticated()
-                .requestMatchers(HttpMethod.GET, "/api/v1/admin/settings/timings").authenticated()
+                        // --------------------------------------------------
+                        // AUTHENTICATED ADMIN READ
+                        // --------------------------------------------------
+                        .requestMatchers(HttpMethod.GET, "/api/v1/admin/wifi-routers").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/admin/settings/location").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/admin/settings/timings").authenticated()
 
-                // --------------------------------------------------
-                // ADMIN ONLY (MODIFY SETTINGS)
-                // --------------------------------------------------
-                .requestMatchers(HttpMethod.POST, "/api/v1/admin/**")
-                        .hasAnyAuthority("ROLE_SUPER_ADMIN", "ROLE_ADMIN", "ROLE_SECTION_ADMIN")
-                .requestMatchers(HttpMethod.PUT, "/api/v1/admin/**")
-                        .hasAnyAuthority("ROLE_SUPER_ADMIN", "ROLE_ADMIN", "ROLE_SECTION_ADMIN")
-                .requestMatchers(HttpMethod.DELETE, "/api/v1/admin/**")
+                        // --------------------------------------------------
+                        // ADMIN WRITE
+                        // --------------------------------------------------
+                        .requestMatchers(HttpMethod.POST, "/api/v1/admin/**")
                         .hasAnyAuthority("ROLE_SUPER_ADMIN", "ROLE_ADMIN", "ROLE_SECTION_ADMIN")
 
-                // --------------------------------------------------
-                // ANY OTHER ADMIN ENDPOINT
-                // --------------------------------------------------
-                .requestMatchers("/api/v1/admin/**")
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/admin/**")
                         .hasAnyAuthority("ROLE_SUPER_ADMIN", "ROLE_ADMIN", "ROLE_SECTION_ADMIN")
 
-                // --------------------------------------------------
-                // DEFAULT RULE
-                // --------------------------------------------------
-                .anyRequest().authenticated()
-            )
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/admin/**")
+                        .hasAnyAuthority("ROLE_SUPER_ADMIN", "ROLE_ADMIN", "ROLE_SECTION_ADMIN")
 
-            .sessionManagement(session ->
-                session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-            );
+                        .requestMatchers("/api/v1/admin/**")
+                        .hasAnyAuthority("ROLE_SUPER_ADMIN", "ROLE_ADMIN", "ROLE_SECTION_ADMIN")
 
+                        .anyRequest().authenticated()
+                )
+
+                .sessionManagement(session ->
+                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                )
+
+                // ✅ IMPORTANT: return proper 401 instead of silent 403
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint((req, res, exx) -> {
+                            res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                            res.getWriter().write("Unauthorized");
+                        })
+                );
+
+        // ✅ JWT filter LAST
         http.addFilterBefore(jwtRequestFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
 
     // ---------------------------------------------------------
-    // CORS CONFIG
+    // CORS
     // ---------------------------------------------------------
     @Bean
     CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
+
         configuration.setAllowedOrigins(List.of("*"));
         configuration.setAllowedMethods(List.of(
                 "GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"
         ));
         configuration.setAllowedHeaders(List.of("*"));
+        configuration.setAllowCredentials(false);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
