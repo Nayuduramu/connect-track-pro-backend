@@ -1,192 +1,154 @@
-// src\main\java\com\connecttrack\pro\controller\AuthController.java
-package com.connecttrack.pro.controller;
+package com.connecttrack.pro.config;
 
-import com.connecttrack.pro.dto.LoginRequest;
-import com.connecttrack.pro.dto.LoginResponse;
-import com.connecttrack.pro.dto.SetPasswordRequest;
-import com.connecttrack.pro.entity.Employee;
-import com.connecttrack.pro.repository.EmployeeRepository;
-import com.connecttrack.pro.security.JwtUtil;
-import com.connecttrack.pro.service.EmailService;
-import org.apache.commons.lang3.RandomStringUtils;
+import com.connecttrack.pro.security.CustomUserDetailsService;
+import com.connecttrack.pro.security.JwtRequestFilter;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.config.Customizer;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer;
+import org.springframework.security.config.http.SessionCreationPolicy;
+
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
-import java.util.Map;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
-@RestController
-@RequestMapping("/api/v1/auth")
-public class AuthController {
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-    @Autowired
-    private AuthenticationManager authenticationManager;
+import java.util.List;
 
-    @Autowired
-    private EmployeeRepository employeeRepository;
-
-    @Autowired
-    private JwtUtil jwtUtil;
+@Configuration
+@EnableWebSecurity
+@EnableMethodSecurity(prePostEnabled = true)
+public class SecurityConfig {
 
     @Autowired
-    private PasswordEncoder passwordEncoder;
+    private JwtRequestFilter jwtRequestFilter;
 
     @Autowired
-    private EmailService emailService;
+    private CustomUserDetailsService customUserDetailsService;
 
- 
-    @PostMapping("/login")
-public ResponseEntity<?> createAuthenticationToken(@RequestBody LoginRequest loginRequest) {
-    Authentication authentication;
+    // ----------------------------------------------------
+    // PASSWORD ENCODER
+    // ----------------------------------------------------
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
 
-    System.out.println("LOGIN EMAIL = " + loginRequest.getEmail());
-    System.out.println("REQUEST PASSWORD = " + loginRequest.getPassword());
-    System.out.println("REQUEST DEVICE = " + loginRequest.getDeviceId());
+    // ----------------------------------------------------
+    // AUTH PROVIDER
+    // ----------------------------------------------------
+    @Bean
+    public DaoAuthenticationProvider authenticationProvider() {
+        DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
 
-    try {
-        authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(
-                        loginRequest.getEmail(),
-                        loginRequest.getPassword()
+        authProvider.setUserDetailsService(customUserDetailsService);
+        authProvider.setPasswordEncoder(passwordEncoder());
+
+        return authProvider;
+    }
+
+    // ----------------------------------------------------
+    // AUTH MANAGER
+    // ----------------------------------------------------
+    @Bean
+    public AuthenticationManager authenticationManager(
+            AuthenticationConfiguration config
+    ) throws Exception {
+        return config.getAuthenticationManager();
+    }
+
+    // ----------------------------------------------------
+    // STATIC FILES
+    // ----------------------------------------------------
+    @Bean
+    public WebSecurityCustomizer webSecurityCustomizer() {
+        return (web) -> web.ignoring().requestMatchers(
+                "/user-uploads/**",
+                "/api/v1/user-uploads/**"
+        );
+    }
+
+    // ----------------------------------------------------
+    // FILTER CHAIN
+    // ----------------------------------------------------
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        http
+                .cors(Customizer.withDefaults())
+                .csrf(csrf -> csrf.disable())
+
+                .authenticationProvider(authenticationProvider())
+
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(
+                                "/",
+                                "/health",
+                                "/swagger-ui/**",
+                                "/swagger-ui.html",
+                                "/v3/api-docs/**",
+                                "/api/v1/auth/**",
+                                "/ws/**"
+                        ).permitAll()
+
+                        .requestMatchers(HttpMethod.GET, "/public/images/**").permitAll()
+
+                        .requestMatchers("/user-uploads/**").permitAll()
+                        .requestMatchers("/api/v1/user-uploads/**").permitAll()
+
+                        .requestMatchers("/api/v1/admin/**")
+                        .hasAnyAuthority("ROLE_SUPER_ADMIN", "ROLE_ADMIN", "ROLE_SECTION_ADMIN")
+
+                        .anyRequest().authenticated()
                 )
-        );
-    } catch (Exception e) {
-        System.out.println("AUTH FAILED = " + e.getMessage());
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid credentials");
+
+                .sessionManagement(session ->
+                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                )
+
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint((req, res, exx) -> {
+                            res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                            res.getWriter().write("Unauthorized");
+                        })
+                );
+
+        http.addFilterBefore(jwtRequestFilter, UsernamePasswordAuthenticationFilter.class);
+
+        return http.build();
     }
 
-    UserDetails userDetails = (UserDetails) authentication.getPrincipal();
+    // ----------------------------------------------------
+    // CORS
+    // ----------------------------------------------------
+    @Bean
+    CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
 
-    Employee employee = employeeRepository.findByEmail(userDetails.getUsername())
-            .orElseThrow(() -> new RuntimeException("Authenticated user not found"));
+        configuration.setAllowedOrigins(List.of("*"));
+        configuration.setAllowedMethods(List.of(
+                "GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"
+        ));
+        configuration.setAllowedHeaders(List.of("*"));
+        configuration.setAllowCredentials(false);
 
-    // ✅ Debug DB values
-    String registeredDeviceId = employee.getDeviceId();
-    String requestDeviceId = loginRequest.getDeviceId();
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
 
-    System.out.println("DB Device ID = " + registeredDeviceId);
-    System.out.println("Request Device ID = " + requestDeviceId);
-    System.out.println("PASSWORD CHANGE REQUIRED = " + employee.isPasswordChangeRequired());
-    System.out.println("ROLE = " + employee.getRole().getName());
-
-    // ✅ TEMP disable device check
-    // if (registeredDeviceId != null && !registeredDeviceId.equals(requestDeviceId)) {
-    //     return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Device mismatch");
-    // }
-
-    // Password change required
-    if (employee.isPasswordChangeRequired()) {
-        String tempToken = jwtUtil.generatePasswordChangeToken(userDetails);
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("passwordChangeRequired", true);
-        response.put("token", tempToken);
-        response.put("id", employee.getId());
-        response.put("fullName", employee.getFullName());
-        response.put("email", employee.getEmail());
-        response.put("role", employee.getRole().getName());
-
-        return ResponseEntity.ok(response);
-    }
-
-    // Generate normal JWT
-    final String jwt = jwtUtil.generateToken(userDetails, employee);
-
-    LoginResponse response = new LoginResponse();
-    response.setToken(jwt);
-    response.setId(employee.getId());
-    response.setFullName(employee.getFullName());
-    response.setEmail(employee.getEmail());
-    response.setRole(employee.getRole().getName());
-    response.setPasswordChangeRequired(false);
-    response.setProfilePictureUrl(employee.getProfilePictureUrl());
-    response.setJoinDate(employee.getJoinDate());
-
-    if (employee.getDepartment() != null) {
-        response.setDepartmentName(employee.getDepartment().getName());
-    }
-
-    return ResponseEntity.ok(response);
-}
-
-    // ===========================
-    // DEBUG RESET FOR ADMIN TEST
-    // ===========================
-    @PostMapping("/debug-reset")
-    public ResponseEntity<String> debugReset() {
-        Employee employee = employeeRepository
-                .findByEmail("admin@company.com")
-                .orElseThrow(() -> new RuntimeException("Admin user not found"));
-
-        employee.setPassword(passwordEncoder.encode("password"));
-        employee.setPasswordChangeRequired(false);
-        employee.setDeviceId("admin-device-001");
-
-        employeeRepository.save(employee);
-
-        return ResponseEntity.ok("Admin password reset successfully");
-    }
-
-    @PostMapping("/set-password")
-    public ResponseEntity<?> setNewPassword(@RequestBody SetPasswordRequest request) {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        String userEmail = authentication.getName();
-
-        Employee employee = employeeRepository.findByEmail(userEmail)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-        employee.setPassword(passwordEncoder.encode(request.getNewPassword()));
-        employee.setPasswordChangeRequired(false);
-
-        employeeRepository.save(employee);
-
-        UserDetails userDetails = (UserDetails) authentication.getPrincipal();
-        final String jwt = jwtUtil.generateToken(userDetails, employee);
-
-        LoginResponse response = new LoginResponse();
-        response.setToken(jwt);
-        response.setId(employee.getId());
-        response.setFullName(employee.getFullName());
-        response.setEmail(employee.getEmail());
-        response.setRole(employee.getRole().getName());
-        response.setPasswordChangeRequired(false);
-        response.setProfilePictureUrl(employee.getProfilePictureUrl());
-        response.setJoinDate(employee.getJoinDate());
-
-        if (employee.getDepartment() != null) {
-            response.setDepartmentName(employee.getDepartment().getName());
-        }
-
-        return ResponseEntity.ok(response);
-    }
-
-    @PostMapping("/forgot-password")
-    public ResponseEntity<?> forgotPassword(@RequestBody Map<String, String> payload) {
-        String email = payload.get("email");
-
-        Employee employee = employeeRepository.findByEmail(email).orElse(null);
-
-        if (employee != null) {
-            String tempPassword = RandomStringUtils.randomAlphanumeric(8);
-
-            employee.setPassword(passwordEncoder.encode(tempPassword));
-            employee.setPasswordChangeRequired(true);
-
-            employeeRepository.save(employee);
-
-            emailService.sendPasswordResetEmail(employee.getEmail(), tempPassword);
-        }
-
-        return ResponseEntity.ok(
-                "If an account with that email exists, a password reset email has been sent."
-        );
+        return source;
     }
 }

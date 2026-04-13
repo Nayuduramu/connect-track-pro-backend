@@ -1,6 +1,6 @@
-// src/main/java/com/connecttrack/pro/config/SecurityConfig.java
 package com.connecttrack.pro.config;
 
+import com.connecttrack.pro.security.CustomUserDetailsService;
 import com.connecttrack.pro.security.JwtRequestFilter;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Configuration;
 
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -37,17 +38,33 @@ public class SecurityConfig {
     @Autowired
     private JwtRequestFilter jwtRequestFilter;
 
-    // ---------------------------------------------------------
+    @Autowired
+    private CustomUserDetailsService customUserDetailsService;
+
+    // ----------------------------------------------------
     // PASSWORD ENCODER
-    // ---------------------------------------------------------
+    // ----------------------------------------------------
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
-    // ---------------------------------------------------------
-    // AUTHENTICATION MANAGER
-    // ---------------------------------------------------------
+    // ----------------------------------------------------
+    // AUTH PROVIDER
+    // ----------------------------------------------------
+    @Bean
+    public DaoAuthenticationProvider authenticationProvider() {
+        DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
+
+        authProvider.setUserDetailsService(customUserDetailsService);
+        authProvider.setPasswordEncoder(passwordEncoder());
+
+        return authProvider;
+    }
+
+    // ----------------------------------------------------
+    // AUTH MANAGER
+    // ----------------------------------------------------
     @Bean
     public AuthenticationManager authenticationManager(
             AuthenticationConfiguration config
@@ -55,9 +72,9 @@ public class SecurityConfig {
         return config.getAuthenticationManager();
     }
 
-    // ---------------------------------------------------------
+    // ----------------------------------------------------
     // STATIC FILES
-    // ---------------------------------------------------------
+    // ----------------------------------------------------
     @Bean
     public WebSecurityCustomizer webSecurityCustomizer() {
         return (web) -> web.ignoring().requestMatchers(
@@ -66,20 +83,18 @@ public class SecurityConfig {
         );
     }
 
-    // ---------------------------------------------------------
-    // SECURITY FILTER CHAIN
-    // ---------------------------------------------------------
+    // ----------------------------------------------------
+    // FILTER CHAIN
+    // ----------------------------------------------------
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .cors(Customizer.withDefaults())
                 .csrf(csrf -> csrf.disable())
 
-                .authorizeHttpRequests(auth -> auth
+                .authenticationProvider(authenticationProvider())
 
-                        // --------------------------------------------------
-                        // PUBLIC ENDPOINTS
-                        // --------------------------------------------------
+                .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
                                 "/",
                                 "/health",
@@ -90,31 +105,10 @@ public class SecurityConfig {
                                 "/ws/**"
                         ).permitAll()
 
-                        // Public images
                         .requestMatchers(HttpMethod.GET, "/public/images/**").permitAll()
 
-                        // uploads
                         .requestMatchers("/user-uploads/**").permitAll()
                         .requestMatchers("/api/v1/user-uploads/**").permitAll()
-
-                        // --------------------------------------------------
-                        // AUTHENTICATED ADMIN READ
-                        // --------------------------------------------------
-                        .requestMatchers(HttpMethod.GET, "/api/v1/admin/wifi-routers").authenticated()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/admin/settings/location").authenticated()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/admin/settings/timings").authenticated()
-
-                        // --------------------------------------------------
-                        // ADMIN WRITE
-                        // --------------------------------------------------
-                        .requestMatchers(HttpMethod.POST, "/api/v1/admin/**")
-                        .hasAnyAuthority("ROLE_SUPER_ADMIN", "ROLE_ADMIN", "ROLE_SECTION_ADMIN")
-
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/admin/**")
-                        .hasAnyAuthority("ROLE_SUPER_ADMIN", "ROLE_ADMIN", "ROLE_SECTION_ADMIN")
-
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/admin/**")
-                        .hasAnyAuthority("ROLE_SUPER_ADMIN", "ROLE_ADMIN", "ROLE_SECTION_ADMIN")
 
                         .requestMatchers("/api/v1/admin/**")
                         .hasAnyAuthority("ROLE_SUPER_ADMIN", "ROLE_ADMIN", "ROLE_SECTION_ADMIN")
@@ -126,7 +120,6 @@ public class SecurityConfig {
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
 
-                // ✅ IMPORTANT: return proper 401 instead of silent 403
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((req, res, exx) -> {
                             res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
@@ -134,15 +127,14 @@ public class SecurityConfig {
                         })
                 );
 
-        // ✅ JWT filter LAST
         http.addFilterBefore(jwtRequestFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
 
-    // ---------------------------------------------------------
+    // ----------------------------------------------------
     // CORS
-    // ---------------------------------------------------------
+    // ----------------------------------------------------
     @Bean
     CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
