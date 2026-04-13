@@ -1,3 +1,4 @@
+// src\main\java\com\connecttrack\pro\controller\AuthController.java
 package com.connecttrack.pro.controller;
 
 import com.connecttrack.pro.dto.LoginRequest;
@@ -41,69 +42,80 @@ public class AuthController {
     @Autowired
     private EmailService emailService;
 
+ 
     @PostMapping("/login")
-    public ResponseEntity<?> createAuthenticationToken(@RequestBody LoginRequest loginRequest) {
-        Authentication authentication;
+public ResponseEntity<?> createAuthenticationToken(@RequestBody LoginRequest loginRequest) {
+    Authentication authentication;
 
-        try {
-            authentication = authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(
-                            loginRequest.getEmail(),
-                            loginRequest.getPassword()
-                    )
-            );
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid credentials");
-        }
+    System.out.println("LOGIN EMAIL = " + loginRequest.getEmail());
+    System.out.println("REQUEST PASSWORD = " + loginRequest.getPassword());
+    System.out.println("REQUEST DEVICE = " + loginRequest.getDeviceId());
 
-        UserDetails userDetails = (UserDetails) authentication.getPrincipal();
+    try {
+        authentication = authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(
+                        loginRequest.getEmail(),
+                        loginRequest.getPassword()
+                )
+        );
+    } catch (Exception e) {
+        System.out.println("AUTH FAILED = " + e.getMessage());
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid credentials");
+    }
 
-        Employee employee = employeeRepository.findByEmail(userDetails.getUsername())
-                .orElseThrow(() -> new RuntimeException("Authenticated user not found"));
+    UserDetails userDetails = (UserDetails) authentication.getPrincipal();
 
-        // Device ID validation
-        
-        // TEMPORARILY DISABLED DEVICE CHECK FOR DEBUGGING
-String registeredDeviceId = employee.getDeviceId();
-String requestDeviceId = loginRequest.getDeviceId();
+    Employee employee = employeeRepository.findByEmail(userDetails.getUsername())
+            .orElseThrow(() -> new RuntimeException("Authenticated user not found"));
 
-System.out.println("DB Device ID = " + registeredDeviceId);
-System.out.println("Request Device ID = " + requestDeviceId);
+    // ✅ Debug DB values
+    String registeredDeviceId = employee.getDeviceId();
+    String requestDeviceId = loginRequest.getDeviceId();
 
-        // Password change required
-        if (employee.isPasswordChangeRequired()) {
-            String tempToken = jwtUtil.generatePasswordChangeToken(userDetails);
+    System.out.println("DB Device ID = " + registeredDeviceId);
+    System.out.println("Request Device ID = " + requestDeviceId);
+    System.out.println("PASSWORD CHANGE REQUIRED = " + employee.isPasswordChangeRequired());
+    System.out.println("ROLE = " + employee.getRole().getName());
 
-            Map<String, Object> response = new HashMap<>();
-            response.put("passwordChangeRequired", true);
-            response.put("token", tempToken);
-            response.put("id", employee.getId());
-            response.put("fullName", employee.getFullName());
-            response.put("email", employee.getEmail());
-            response.put("role", employee.getRole().getName());
+    // ✅ TEMP disable device check
+    // if (registeredDeviceId != null && !registeredDeviceId.equals(requestDeviceId)) {
+    //     return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Device mismatch");
+    // }
 
-            return ResponseEntity.ok(response);
-        }
+    // Password change required
+    if (employee.isPasswordChangeRequired()) {
+        String tempToken = jwtUtil.generatePasswordChangeToken(userDetails);
 
-        // Generate normal JWT
-        final String jwt = jwtUtil.generateToken(userDetails, employee);
-
-        LoginResponse response = new LoginResponse();
-        response.setToken(jwt);
-        response.setId(employee.getId());
-        response.setFullName(employee.getFullName());
-        response.setEmail(employee.getEmail());
-        response.setRole(employee.getRole().getName());
-        response.setPasswordChangeRequired(false);
-        response.setProfilePictureUrl(employee.getProfilePictureUrl());
-        response.setJoinDate(employee.getJoinDate());
-
-        if (employee.getDepartment() != null) {
-            response.setDepartmentName(employee.getDepartment().getName());
-        }
+        Map<String, Object> response = new HashMap<>();
+        response.put("passwordChangeRequired", true);
+        response.put("token", tempToken);
+        response.put("id", employee.getId());
+        response.put("fullName", employee.getFullName());
+        response.put("email", employee.getEmail());
+        response.put("role", employee.getRole().getName());
 
         return ResponseEntity.ok(response);
     }
+
+    // Generate normal JWT
+    final String jwt = jwtUtil.generateToken(userDetails, employee);
+
+    LoginResponse response = new LoginResponse();
+    response.setToken(jwt);
+    response.setId(employee.getId());
+    response.setFullName(employee.getFullName());
+    response.setEmail(employee.getEmail());
+    response.setRole(employee.getRole().getName());
+    response.setPasswordChangeRequired(false);
+    response.setProfilePictureUrl(employee.getProfilePictureUrl());
+    response.setJoinDate(employee.getJoinDate());
+
+    if (employee.getDepartment() != null) {
+        response.setDepartmentName(employee.getDepartment().getName());
+    }
+
+    return ResponseEntity.ok(response);
+}
 
     // ===========================
     // DEBUG RESET FOR ADMIN TEST
