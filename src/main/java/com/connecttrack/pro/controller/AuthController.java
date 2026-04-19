@@ -1,4 +1,3 @@
-// src\main\java\com\connecttrack\pro\controller\AuthController.java
 package com.connecttrack.pro.controller;
 
 import com.connecttrack.pro.dto.LoginRequest;
@@ -12,8 +11,6 @@ import org.apache.commons.lang3.RandomStringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -28,9 +25,6 @@ import java.util.Map;
 public class AuthController {
 
     @Autowired
-    private AuthenticationManager authenticationManager;
-
-    @Autowired
     private EmployeeRepository employeeRepository;
 
     @Autowired
@@ -42,122 +36,59 @@ public class AuthController {
     @Autowired
     private EmailService emailService;
 
- 
+    // =========================
+    // LOGIN
+    // =========================
     @PostMapping("/login")
-public ResponseEntity<?> createAuthenticationToken(@RequestBody LoginRequest loginRequest) {
+    public ResponseEntity<?> login(@RequestBody LoginRequest loginRequest) {
 
-    System.out.println("LOGIN EMAIL = " + loginRequest.getEmail());
-    System.out.println("REQUEST PASSWORD = " + loginRequest.getPassword());
-    System.out.println("REQUEST DEVICE = " + loginRequest.getDeviceId());
+        Employee employee = employeeRepository.findByEmail(loginRequest.getEmail())
+                .orElse(null);
 
-    Employee employee = employeeRepository.findByEmail(loginRequest.getEmail())
-            .orElse(null);
+        if (employee == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "User not found"));
+        }
 
-    if (employee == null) {
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("User not found");
-    }
+        boolean passwordMatched = passwordEncoder.matches(
+                loginRequest.getPassword(),
+                employee.getPassword()
+        );
 
-    System.out.println("DB HASH = " + employee.getPassword());
+        if (!passwordMatched) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "Invalid credentials"));
+        }
 
-    // ✅ Direct BCrypt password verification
-    boolean passwordMatched = passwordEncoder.matches(
-            loginRequest.getPassword(),
-            employee.getPassword()
-    );
+        // ✅ DEVICE CHECK
+        if (employee.getDeviceId() != null &&
+                loginRequest.getDeviceId() != null &&
+                !employee.getDeviceId().equals(loginRequest.getDeviceId())) {
 
-    System.out.println("PASSWORD MATCHED = " + passwordMatched);
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message", "Device mismatch"));
+        }
 
-    if (!passwordMatched) {
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid credentials");
-    }
+        // ✅ BUILD USER
+        UserDetails userDetails = org.springframework.security.core.userdetails.User
+                .withUsername(employee.getEmail())
+                .password(employee.getPassword())
+                .authorities(employee.getRole().getName())
+                .build();
 
-    // ✅ Device check
-    String registeredDeviceId = employee.getDeviceId();
-    String requestDeviceId = loginRequest.getDeviceId();
+        // ✅ PASSWORD CHANGE
+        if (employee.isPasswordChangeRequired()) {
+            String tempToken = jwtUtil.generatePasswordChangeToken(userDetails);
 
-    System.out.println("DB Device ID = " + registeredDeviceId);
-    System.out.println("Request Device ID = " + requestDeviceId);
+            Map<String, Object> response = new HashMap<>();
+            response.put("passwordChangeRequired", true);
+            response.put("token", tempToken);
 
-    if (registeredDeviceId != null &&
-            requestDeviceId != null &&
-            !registeredDeviceId.equals(requestDeviceId)) {
-        return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Device mismatch");
-    }
+            return ResponseEntity.ok(response);
+        }
 
-    // ✅ Build token using email directly
-    UserDetails userDetails = org.springframework.security.core.userdetails.User
-            .withUsername(employee.getEmail())
-            .password(employee.getPassword())
-            .authorities(employee.getRole().getName())
-            .build();
-
-    // Password change required
-    if (employee.isPasswordChangeRequired()) {
-        String tempToken = jwtUtil.generatePasswordChangeToken(userDetails);
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("passwordChangeRequired", true);
-        response.put("token", tempToken);
-        response.put("id", employee.getId());
-        response.put("fullName", employee.getFullName());
-        response.put("email", employee.getEmail());
-        response.put("role", employee.getRole().getName());
-
-        return ResponseEntity.ok(response);
-    }
-
-    final String jwt = jwtUtil.generateToken(userDetails, employee);
-
-    LoginResponse response = new LoginResponse();
-    response.setToken(jwt);
-    response.setId(employee.getId());
-    response.setFullName(employee.getFullName());
-    response.setEmail(employee.getEmail());
-    response.setRole(employee.getRole().getName());
-    response.setPasswordChangeRequired(false);
-    response.setProfilePictureUrl(employee.getProfilePictureUrl());
-    response.setJoinDate(employee.getJoinDate());
-
-    if (employee.getDepartment() != null) {
-        response.setDepartmentName(employee.getDepartment().getName());
-    }
-
-    return ResponseEntity.ok(response);
-}
-
-    // ===========================
-    // DEBUG RESET FOR ADMIN TEST
-    // ===========================
-    @PostMapping("/debug-reset")
-    public ResponseEntity<String> debugReset() {
-        Employee employee = employeeRepository
-                .findByEmail("admin@company.com")
-                .orElseThrow(() -> new RuntimeException("Admin user not found"));
-
-        employee.setPassword(passwordEncoder.encode("password"));
-        employee.setPasswordChangeRequired(false);
-        employee.setDeviceId("admin-device-001");
-
-        employeeRepository.save(employee);
-
-        return ResponseEntity.ok("Admin password reset successfully");
-    }
-
-    @PostMapping("/set-password")
-    public ResponseEntity<?> setNewPassword(@RequestBody SetPasswordRequest request) {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        String userEmail = authentication.getName();
-
-        Employee employee = employeeRepository.findByEmail(userEmail)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-        employee.setPassword(passwordEncoder.encode(request.getNewPassword()));
-        employee.setPasswordChangeRequired(false);
-
-        employeeRepository.save(employee);
-
-        UserDetails userDetails = (UserDetails) authentication.getPrincipal();
-        final String jwt = jwtUtil.generateToken(userDetails, employee);
+        // ✅ JWT TOKEN
+        String jwt = jwtUtil.generateToken(userDetails, employee);
 
         LoginResponse response = new LoginResponse();
         response.setToken(jwt);
@@ -176,8 +107,54 @@ public ResponseEntity<?> createAuthenticationToken(@RequestBody LoginRequest log
         return ResponseEntity.ok(response);
     }
 
+    // =========================
+    // DEBUG RESET
+    // =========================
+    @PostMapping("/debug-reset")
+    public ResponseEntity<?> debugReset() {
+
+        Employee employee = employeeRepository
+                .findByEmail("admin@company.com")
+                .orElseThrow(() -> new RuntimeException("Admin not found"));
+
+        employee.setPassword(passwordEncoder.encode("password"));
+        employee.setPasswordChangeRequired(false);
+        employee.setDeviceId("admin-device-001");
+
+        employeeRepository.save(employee);
+
+        return ResponseEntity.ok(Map.of("message", "Admin reset success"));
+    }
+
+    // =========================
+    // SET PASSWORD
+    // =========================
+    @PostMapping("/set-password")
+    public ResponseEntity<?> setPassword(@RequestBody SetPasswordRequest request) {
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        String email = authentication.getName();
+
+        Employee employee = employeeRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        employee.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        employee.setPasswordChangeRequired(false);
+
+        employeeRepository.save(employee);
+
+        UserDetails userDetails = (UserDetails) authentication.getPrincipal();
+        String jwt = jwtUtil.generateToken(userDetails, employee);
+
+        return ResponseEntity.ok(Map.of("token", jwt));
+    }
+
+    // =========================
+    // FORGOT PASSWORD
+    // =========================
     @PostMapping("/forgot-password")
     public ResponseEntity<?> forgotPassword(@RequestBody Map<String, String> payload) {
+
         String email = payload.get("email");
 
         Employee employee = employeeRepository.findByEmail(email).orElse(null);
@@ -194,7 +171,7 @@ public ResponseEntity<?> createAuthenticationToken(@RequestBody LoginRequest log
         }
 
         return ResponseEntity.ok(
-                "If an account with that email exists, a password reset email has been sent."
+                Map.of("message", "If account exists, reset email sent")
         );
     }
 }

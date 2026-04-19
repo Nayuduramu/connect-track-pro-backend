@@ -41,30 +41,22 @@ public class SecurityConfig {
     @Autowired
     private CustomUserDetailsService customUserDetailsService;
 
-    // ----------------------------------------------------
-    // PASSWORD ENCODER
-    // ----------------------------------------------------
+    // ✅ PASSWORD ENCODER
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
-    // ----------------------------------------------------
-    // AUTH PROVIDER
-    // ----------------------------------------------------
+    // ✅ AUTH PROVIDER
     @Bean
     public DaoAuthenticationProvider authenticationProvider() {
         DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
-
         authProvider.setUserDetailsService(customUserDetailsService);
         authProvider.setPasswordEncoder(passwordEncoder());
-
         return authProvider;
     }
 
-    // ----------------------------------------------------
-    // AUTH MANAGER
-    // ----------------------------------------------------
+    // ✅ AUTH MANAGER
     @Bean
     public AuthenticationManager authenticationManager(
             AuthenticationConfiguration config
@@ -72,9 +64,7 @@ public class SecurityConfig {
         return config.getAuthenticationManager();
     }
 
-    // ----------------------------------------------------
-    // STATIC FILES
-    // ----------------------------------------------------
+    // ✅ STATIC FILES
     @Bean
     public WebSecurityCustomizer webSecurityCustomizer() {
         return (web) -> web.ignoring().requestMatchers(
@@ -83,11 +73,10 @@ public class SecurityConfig {
         );
     }
 
-    // ----------------------------------------------------
-    // FILTER CHAIN
-    // ----------------------------------------------------
+    // ✅ SECURITY FILTER
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+
         http
                 .cors(Customizer.withDefaults())
                 .csrf(csrf -> csrf.disable())
@@ -101,12 +90,14 @@ public class SecurityConfig {
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
                                 "/v3/api-docs/**",
+
+                                // ✅ IMPORTANT
                                 "/api/v1/auth/**",
+
                                 "/ws/**"
                         ).permitAll()
 
                         .requestMatchers(HttpMethod.GET, "/public/images/**").permitAll()
-
                         .requestMatchers("/user-uploads/**").permitAll()
                         .requestMatchers("/api/v1/user-uploads/**").permitAll()
 
@@ -120,10 +111,12 @@ public class SecurityConfig {
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
 
+                // ✅ FIXED JSON RESPONSE
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((req, res, exx) -> {
                             res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                            res.getWriter().write("Unauthorized");
+                            res.setContentType("application/json");
+                            res.getWriter().write("{\"message\":\"Unauthorized\"}");
                         })
                 );
 
@@ -132,9 +125,7 @@ public class SecurityConfig {
         return http.build();
     }
 
-    // ----------------------------------------------------
-    // CORS
-    // ----------------------------------------------------
+    // ✅ CORS
     @Bean
     CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
