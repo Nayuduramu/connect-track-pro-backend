@@ -8,11 +8,11 @@ public class HealthController {
 
     @GetMapping("/")
     public String home() {
-        return "Connect Track Pro API is running";
+        return "OK";
     }
 
     @GetMapping("/health")
     public String health() {
-        return "OK";
+        return "UP";
     }
 }
