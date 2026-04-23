@@ -31,11 +31,9 @@ public class SecurityConfig {
                             "/health",                // optional
                             "/api/v1/auth/**",
                             "/swagger-ui/**",
-                            "/v3/api-docs/**",
-                            "/public/**",
-                            "/user-uploads/**"
-                    ).permitAll()
-
+                            "/v3/api-docs/**"
+                            ).permitAll()
+                
                     .anyRequest().authenticated()
             )
 
