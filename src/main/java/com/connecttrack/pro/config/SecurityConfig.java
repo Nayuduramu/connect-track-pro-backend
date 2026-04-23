@@ -23,17 +23,26 @@ public class SecurityConfig {
 
         http
             .csrf(csrf -> csrf.disable())
+
             .authorizeHttpRequests(auth -> auth
+                    // ✅ VERY IMPORTANT — allow root for Render health check
                     .requestMatchers(
+                            "/",                      // 🔥 REQUIRED (Render health check)
+                            "/health",                // optional
                             "/api/v1/auth/**",
                             "/swagger-ui/**",
-                            "/v3/api-docs/**"
+                            "/v3/api-docs/**",
+                            "/public/**",
+                            "/user-uploads/**"
                     ).permitAll()
+
                     .anyRequest().authenticated()
             )
+
             .sessionManagement(session ->
                     session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
             )
+
             .exceptionHandling(ex -> ex
                     .authenticationEntryPoint((req, res, exx) -> {
                         res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
@@ -42,6 +51,7 @@ public class SecurityConfig {
                     })
             );
 
+        // ✅ JWT filter
         http.addFilterBefore(jwtRequestFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
